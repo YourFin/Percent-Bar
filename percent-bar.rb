@@ -1,42 +1,66 @@
 #!/usr/bin/env ruby
 require 'rubygems'
-require 'gosu'
-require 'thread'
 require 'optparse'
 require 'pathname'
-require 'Digest'
+require 'digest'
 
-$options = Struct.new(:name)
+$options = {}
 
-OptionParser.new do |opts|
+parser = OptionParser.new do |opts|
   opts.banner = "Usage percent-bar PERCENT [OPTIONS]"
   opts.separator  ""
   opts.separator  "Options:"
   opts.on("-t","--timeout N", Float, "Time until bar closes automatically. <= 0 will not timeout") do |nn|
-    options[:delay] = nn
+    $options[:delay] = nn
   end
   opts.on("--position x,y", Array, "Position on screen") do |pos|
-    options[:posX] = pos[0]
-    options[:posY] = pos[1]
+    $options[:posX] = pos[0]
+    $options[:posY] = pos[1]
   end
   opts.on("--size width,height", Array, "Size of window on screen") do |size|
-    options[:width] = size[0]
-    options[:height] = size[1]
+    $options[:width] = size[0]
+    $options[:height] = size[1]
   end
   opts.on('-h', '--help', 'Display this screen') do
     puts opts
+    exit
   end
 end.parse!
 
-#hash all the command line options to create
+## Validate input
+def invalidArguments()
+  puts "Invalid arguments; try 'percent-bar --help' for help"
+  exit
+end
+
+if ARGV.length != 1
+  invalidArguments
+end
+
+begin
+  $percent = ARGV[0].to_r
+rescue TypeError
+  invalidArguments
+end
+
+##Hash all the command line options to create
+puts $options.inspect
 #a unique identifier
-hash = Digest::MD5.new.update(opts.to_s).update(ARGV.to_s).base64digest
+hash = Digest::MD5.new.update($options.inspect).base64digest
 pipePath = Pathname.new('/tmp/percent-bar-' + hash)
 
+# Default arguments
+$options[:delay] = 2 if not $options.has_key? :delay
+
+## Create Pipe
 if pipePath.pipe?
   pipePath.open('w') { |file| file.write(ARGV[0])}
   exit
-else System('mkfifo ' + pipePath) end
+else system('mkfifo ' + pipePath.to_s) end
+
+# Start handling of drawing window
+require 'gosu'
+require 'thread'
 
 $mutex = Mutex.new
 $percentMutex = Mutex.new
@@ -55,25 +79,26 @@ class BarWindow < Gosu::Window
   def draw
     Gosu.draw_rect(200, 200, 100, 100, Gosu::Color::WHITE)
     $percentMutex.synchronize do
-        Gosu.draw_rect(225, 210, 50, $percent, Gosu::Color::BLACK)
+        Gosu.draw_rect(225, 210, 50, $percent.to_i, Gosu::Color::BLACK)
     end
   end
 
   def button_down(id)
-    if id == Gosu::KB_ESCAPE
-      close
-    else
-      super
-    end
+    super
   end
 end
+
+puts "hello"
 
 #show window and fork to new thread
 $windowThread = Thread.new {BarWindow.new.show}
 
+# Clean up pipe
+at_exit { system("rm -f " + pipePath.to_s)}
+
 def timer
   puts "timer"
-  sleep 5
+  sleep $options[:delay]
   $mutex.synchronize {
     $windowThread.kill
     exit
@@ -84,10 +109,10 @@ $timerThread = Thread.new {timer()}
 
 loop do
   puts "loop"
-  input = open(pipePath, "r+")
+  input = pipePath.open('r')
   a = input.gets
   $percentMutex.synchronize do
-    $percent = a.to_i
+    $percent = a
   end
 
   $timerThread.kill
