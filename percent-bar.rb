@@ -18,21 +18,24 @@ parser = OptionParser.new do |opts|
     $options[:posX] = pos[0]
     $options[:posY] = pos[1]
   end
-  opts.on("-f", "--foreground STRING or HEX", String, "Color of bar") do |color|
+  opts.on("-f", "--foreground STRING or HEX", String, "Color of bar.") do |color|
     $options[:foreground] = Color::RGB.extract_colors(color)[0]
   end
-  opts.on('-b', '--background STRING or HEX', String, "Color of background") do |color|
+  opts.on('-b', '--background STRING or HEX', String, "Color of background.") do |color|
     $options[:background] = Color::RGB.extract_colors(color)[0]
   end 
-  opts.on("-W", "--width WIDTH", Integer, "Width of window on screen") do |width|
+  opts.on('-B', '--bar-background STRING or HEX', String, "Color of the un-used part of the bar.") do |color|
+    $options[:barBackground] = Color::RGB.extract_colors(color)[0]
+  end
+  opts.on("-W", "--width WIDTH", Integer, "Width of window on screen.") do |width|
     $options[:width] = width
   end
-  opts.on("-H", "--height HEIGHT", Integer, "Height of window on screen") do |height|
+  opts.on("-H", "--height HEIGHT", Integer, "Height of window on screen.") do |height|
     $options[:height] = height
   end
-  #opts.on('-i', '--icon PATH', URI, "Path to icon.") do |icon|
-  #  $options[:icon] = icon
-  #end
+  opts.on('-i', '--icon PATH', String, "Path to icon.") do |icon|
+    $options[:icon] = icon
+  end
   opts.on('-c', '--caption', 'Caption for the window') do |caption|
     $options[:caption] = caption
   end
@@ -83,6 +86,7 @@ $options[:height] = 150 if not $options.has_key? :height
 $options[:width] = $options[:height] / 5 if not $options.has_key? :width
 $options[:background] = Color::RGB.by_name("Black") if not $options.has_key? :background
 $options[:foreground] = Color::RGB.by_name("White") if not $options.has_key? :foreground
+$options[:barBackground] = $options[:background] if not $options.has_key? :barBackground
 
 def colorToGosu(rgb)
   return Gosu::Color.argb(255, rgb.red, rgb.green, rgb.blue)
@@ -90,6 +94,7 @@ end
 
 $options[:background] = colorToGosu($options[:background])
 $options[:foreground] = colorToGosu($options[:foreground])
+$options[:barBackground] = colorToGosu($options[:barBackground])
 
 $barwidth = $options[:width] * 3 / 5
 $barX = $options[:width] / 5
@@ -121,6 +126,9 @@ class BarWindow < Gosu::Window
   def draw
     $percentMutex.synchronize do
       Gosu.draw_rect(0,0,$options[:width],$options[:height],$options[:background])
+      Gosu.draw_rect($barX.to_f, $padding, $barwidth.to_f,
+                     ($options[:height] - ($padding * 2)),
+                     $options[:barBackground])
       Gosu.draw_rect($barX.to_f,
                      $options[:height].to_f - $padding - myheight($percent),
                      $barwidth.to_f, myheight($percent.to_f), $options[:foreground])
@@ -139,11 +147,13 @@ $windowThread = Thread.new {BarWindow.new.show}
 at_exit { system("rm -f " + pipePath.to_s)}
 
 def timer
-  sleep $options[:delay]
-  $mutex.synchronize {
-    $windowThread.kill
-    exit
-  }
+  if $options[:delay] >= 0
+    sleep $options[:delay]
+    $mutex.synchronize {
+        $windowThread.kill
+        exit
+    }
+  end
 end
 
 $timerThread = Thread.new {timer()}
